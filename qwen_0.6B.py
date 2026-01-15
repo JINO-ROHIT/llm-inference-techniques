@@ -18,15 +18,34 @@ QWEN3_CONFIG = {
     "dtype": torch.bfloat16,     
 }
 
+class RMSNorm(nn.Module):
+    def __init__(self, config: dict, eps: float = 1e-5, bias: bool = False):
+        super().__init__()
+        self.eps = eps
+        self.scale = nn.Parameter(torch.ones(config["emb_dim"]))
+        self.shift = nn.Parameter(torch.zeros(config["emb_dim"])) if bias else None
+
+    def forward(self, x: torch.Tensor): # to-do write this better?
+        input_dtype = x.dtype
+
+        x = x.to(torch.float32) # upscale
+        n = x.shape[0]
+        norm_x = x * torch.rsqrt(self.eps + (1/n * torch.sum(x * x)))
+        norm_x = norm_x * self.scale
+
+        if self.shift:
+            norm_x = norm_x + self.shift
+        
+        return norm_x.to(input_dtype)
 
 class FNN:
-    def __init__(self, config):
+    def __init__(self, config: dict):
         super().__init__()
         self.gate_proj = nn.Linear(config["emb_dim"], config["hidden_dim"], dtype=config["dtype"], bias=False)
         self.up_proj = nn.Linear(config["emb_dim"], config["hidden_dim"], dtype=config["dtype"], bias=False)
         self.down_proj = nn.Linear(config["hidden_dim"], config["emb_dim"], dtype=config["dtype"], bias=False)
     
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         gate = self.gate_proj(x)
         gate = nn.functional.silu(gate)
         up = self.up_proj(x)
