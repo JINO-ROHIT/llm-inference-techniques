@@ -69,18 +69,18 @@ def load_weights_into_qwen(model, param_config, params):
         )
 
         # Feedforward weights
-        block.ff.fc1.weight = assign(
-            block.ff.fc1.weight,
+        block.ff.gate_proj.weight = assign(
+            block.ff.gate_proj.weight,
             params[f"model.layers.{l}.mlp.gate_proj.weight"],
             f"model.layers.{l}.mlp.gate_proj.weight"
         )
-        block.ff.fc2.weight = assign(
-            block.ff.fc2.weight,
+        block.ff.up_proj.weight = assign(
+            block.ff.up_proj.weight,
             params[f"model.layers.{l}.mlp.up_proj.weight"],
             f"model.layers.{l}.mlp.up_proj.weight"
         )
-        block.ff.fc3.weight = assign(
-            block.ff.fc3.weight,
+        block.ff.down_proj.weight = assign(
+            block.ff.down_proj.weight,
             params[f"model.layers.{l}.mlp.down_proj.weight"],
             f"model.layers.{l}.mlp.down_proj.weight"
         )
