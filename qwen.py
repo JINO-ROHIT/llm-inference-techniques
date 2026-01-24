@@ -1,17 +1,10 @@
 """a lot of the code is inspired from sebastian rascka here - https://github.com/rasbt/LLMs-from-scratch/blob/main/ch05/11_qwen3/standalone-qwen3.ipynb"""
 
-from pathlib import Path
 
 import torch
 import torch.nn as nn
-from safetensors.torch import load_file
-from huggingface_hub import hf_hub_download
-
-from utils import load_weights_into_qwen, Qwen3Tokenizer
 
 torch.manual_seed(42)
-
-device = torch.device("mps") # i have a mac
 
 QWEN3_CONFIG = {
     "vocab_size": 151_936,    
@@ -27,6 +20,7 @@ QWEN3_CONFIG = {
     "dtype": torch.bfloat16,     
 }
 
+
 def compute_rope_params(head_dim: int, theta_base: int = 10_000, context_length: int = 4096, dtype: torch.dtype = torch.float32):
     inv_freq = 1.0 / theta_base ** (torch.arange(0, head_dim, 2, dtype = dtype) / head_dim)
     positions = torch.arange(0, context_length, dtype = dtype)
@@ -37,6 +31,7 @@ def compute_rope_params(head_dim: int, theta_base: int = 10_000, context_length:
     sin_angle = torch.sin(angles)
     cos_angle = torch.cos(angles)
     return sin_angle, cos_angle
+
 
 def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor):
     bs, n_head, seq_len, head_dim = x.shape
@@ -50,25 +45,25 @@ def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor):
     x_rotated = (x * cos) + (rotated * sin)
     return x_rotated.to(dtype = x.dtype) # okay to use lower precision
 
-
 class RMSNorm(nn.Module):
-    def __init__(self, emb_dim: int, eps: float = 1e-5, bias: bool = False):
+    def __init__(self, emb_dim: int, eps: float = 1e-6, bias: bool =False):
         super().__init__()
         self.eps = eps
         self.scale = nn.Parameter(torch.ones(emb_dim))
         self.shift = nn.Parameter(torch.zeros(emb_dim)) if bias else None
 
-    def forward(self, x: torch.Tensor): # to-do write this better?
+    def forward(self, x):
         input_dtype = x.dtype
 
-        x = x.to(torch.float32) # upscale
-        n = x.shape[0]
-        norm_x = x * torch.rsqrt(self.eps + (1/n * torch.sum(x * x)))
+        x = x.to(torch.float32) #upscale
+
+        variance = x.pow(2).mean(dim=-1, keepdim=True)
+        norm_x = x * torch.rsqrt(variance + self.eps)
         norm_x = norm_x * self.scale
 
-        if self.shift:
+        if self.shift is not None:
             norm_x = norm_x + self.shift
-        
+
         return norm_x.to(input_dtype)
 
 class FFN(nn.Module):
@@ -192,7 +187,7 @@ class Qwen3Model(nn.Module):
             head_dim = cfg["emb_dim"] // cfg["n_heads"]
         else:
             head_dim = cfg["head_dim"]
-        cos, sin = compute_rope_params(
+        sin, cos = compute_rope_params(
             head_dim=head_dim,
             theta_base=cfg["rope_base"],
             context_length=cfg["context_length"]
@@ -214,29 +209,3 @@ class Qwen3Model(nn.Module):
         x = self.final_norm(x)
         logits = self.out_head(x.to(self.cfg["dtype"]))
         return logits
-    
-model = Qwen3Model(QWEN3_CONFIG)
-
-repo_id = f"Qwen/Qwen3-0.6B-Base"
-local_dir = Path(repo_id).parts[-1]
-weights_file = hf_hub_download(
-        repo_id=repo_id,
-        filename="model.safetensors",
-        local_dir=local_dir,
-    )
-weights_dict = load_file(weights_file)
-
-
-tokenizer = Qwen3Tokenizer(
-        tokenizer_file_path="Qwen3-0.6B-Base/tokenizer.json",
-        repo_id=repo_id,
-        apply_chat_template=False,
-        add_generation_prompt=False,
-        add_thinking=False
-)
-
-prompt = "Give me a short introduction to large language models."
-
-input_token_ids = tokenizer.encode(prompt)
-text = tokenizer.decode(input_token_ids)
-print(f"Query: {text}")
