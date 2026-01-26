@@ -6,4 +6,6 @@
 
 | technique | mps | cuda |
 |-----------|-----|------|
-| naive greedy sampling | 12.68 toks/s | - |
+| greedy sampling | 12.68 toks/s | - |
+| greedy sampling with kv cache | 33.73 toks/s | - |
+

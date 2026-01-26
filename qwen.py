@@ -33,13 +33,13 @@ def compute_rope_params(head_dim: int, theta_base: int = 10_000, context_length:
     return sin_angle, cos_angle
 
 
-def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor):
+def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor, offset: int = 0):
     bs, n_head, seq_len, head_dim = x.shape
     x1 = x[..., : head_dim // 2] # ... better than use :, :, :, :head_dim //2
     x2 = x[..., head_dim // 2 :]
 
-    cos = cos[:seq_len, :].unsqueeze(0).unsqueeze(0) # (1, 1, seq_len, head_dim)
-    sin = sin[:seq_len, :].unsqueeze(0).unsqueeze(0)
+    cos = cos[offset: offset + seq_len, :].unsqueeze(0).unsqueeze(0) # (1, 1, seq_len, head_dim)
+    sin = sin[offset: offset + seq_len, :].unsqueeze(0).unsqueeze(0)    
 
     rotated = torch.cat((-x2, x1), dim = -1)
     x_rotated = (x * cos) + (rotated * sin)
@@ -79,6 +79,23 @@ class FFN(nn.Module):
         up = self.up_proj(x)
         return self.down_proj(gate * up)
 
+class KVCache:
+    def __init__(self, n_layers):
+        self.cache = [None] * n_layers
+
+    def get(self, layer_idx):
+        return self.cache[layer_idx]
+
+    def update(self, layer_idx, value):
+        self.cache[layer_idx] = value
+
+    def get_all(self):
+        return self.cache
+
+    def reset(self):
+        for i in range(len(self.cache)):
+            self.cache[i] = None
+
 class GroupedQueryAttention(nn.Module):
     def __init__(
         self, d_in, num_heads, num_kv_groups, head_dim=None, qk_norm=False, dtype=None
@@ -109,7 +126,7 @@ class GroupedQueryAttention(nn.Module):
         else:
             self.q_norm = self.k_norm = None
 
-    def forward(self, x, mask, cos, sin):
+    def forward(self, x, mask, cos, sin, start_pos = 0, cache = None):
         b, num_tokens, _ = x.shape
 
         queries = self.W_query(x)  # (b, num_tokens, num_heads * head_dim)
@@ -125,9 +142,19 @@ class GroupedQueryAttention(nn.Module):
         if self.k_norm:
             keys = self.k_norm(keys)
 
-        queries = apply_rope(queries, cos, sin)
-        keys = apply_rope(keys, cos, sin)
+        queries = apply_rope(queries, cos, sin, offset = start_pos)
+        keys = apply_rope(keys, cos, sin, offset = start_pos)
 
+        #kv cache start
+        if cache is not None:
+            prev_k, prev_v = cache
+            keys = torch.cat([prev_k, keys], dim = 2)
+            values = torch.cat([prev_v, values], dim = 2)
+        else:
+            start_pos = 0
+            keys, values = keys, values
+        
+        next_cache = (keys, values)
         # Expand K and V to match number of heads
         keys = keys.repeat_interleave(self.group_size, dim=1)
         values = values.repeat_interleave(self.group_size, dim=1)
@@ -138,7 +165,7 @@ class GroupedQueryAttention(nn.Module):
         attn_weights = torch.softmax(attn_scores / self.head_dim**0.5, dim=-1)
 
         context = (attn_weights @ values).transpose(1, 2).reshape(b, num_tokens, self.d_out)
-        return self.out_proj(context)
+        return self.out_proj(context), next_cache
 
 
 class TransformerBlock(nn.Module):
@@ -156,10 +183,11 @@ class TransformerBlock(nn.Module):
         self.norm1 = RMSNorm(cfg["emb_dim"], eps=1e-6)
         self.norm2 = RMSNorm(cfg["emb_dim"], eps=1e-6)
 
-    def forward(self, x, mask, cos, sin):
+    def forward(self, x, mask, cos, sin, start_pos = 0, cache = None):
         shortcut = x
         x = self.norm1(x)
-        x = self.att(x, mask, cos, sin)  # Shape [batch_size, num_tokens, emb_size]
+        #x = self.att(x, mask, cos, sin)  # Shape [batch_size, num_tokens, emb_size]
+        x, next_cache = self.att(x, mask, cos, sin, start_pos = start_pos, cache = cache)
         x = x + shortcut 
 
         shortcut = x
@@ -167,7 +195,7 @@ class TransformerBlock(nn.Module):
         x = self.ff(x)
         x = x + shortcut 
 
-        return x
+        return x, next_cache
 
 
 class Qwen3Model(nn.Module):
@@ -195,17 +223,39 @@ class Qwen3Model(nn.Module):
         self.register_buffer("cos", cos, persistent=False)
         self.register_buffer("sin", sin, persistent=False)
         self.cfg = cfg
+        self.current_pos = 0  # track current position in KV cache
 
 
-    def forward(self, in_idx):
+    def forward(self, in_idx, cache = None):
         tok_embeds = self.tok_emb(in_idx)
         x = tok_embeds
 
         num_tokens = x.shape[1]
-        mask = torch.triu(torch.ones(num_tokens, num_tokens, device=x.device, dtype=torch.bool), diagonal=1)
+
+        if cache is not None:
+            pos_start = self.current_pos
+            pos_end = pos_start + num_tokens
+            mask = torch.triu(
+                torch.ones(pos_end, pos_end, device = x.device, dtype = torch.bool), diagonal = 1)[pos_start:pos_end, :pos_end]
+            self.current_pos = pos_end
+        else:
+            pos_start = 0 
+            mask = torch.triu(torch.ones(num_tokens, num_tokens, device = x.device, dtype = torch.bool), diagonal = 1)
         
-        for block in self.trf_blocks:
-            x = block(x, mask, self.cos, self.sin)
+        # (1, 1, num_tokens, num_tokens) to broadcast across batch and heads
+        mask = mask[None, None, :, :]
+
+        for i, block in enumerate(self.trf_blocks):
+            blk_cache = cache.get(i) if cache else None
+            x, new_blk_cache = block(x, mask, self.cos, self.sin,
+                                     start_pos = pos_start,
+                                     cache = blk_cache)
+            if cache is not None:
+                cache.update(i, new_blk_cache)
+
         x = self.final_norm(x)
         logits = self.out_head(x.to(self.cfg["dtype"]))
         return logits
+
+    def reset_kv_cache(self):
+        self.current_pos = 0
