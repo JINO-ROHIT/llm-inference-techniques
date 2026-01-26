@@ -12,7 +12,10 @@ import torch
 model = Qwen3Model(QWEN3_CONFIG)
 model.eval()
 
-device = torch.device("mps") # i have a mac
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("mps")
 
 repo_id = f"Qwen/Qwen3-0.6B-Base"
 local_dir = Path(repo_id).parts[-1]
