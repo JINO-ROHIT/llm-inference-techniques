@@ -9,3 +9,7 @@
 | greedy sampling | 12.68 toks/s | 39.11 toks/s |
 | greedy sampling with kv cache | 33.73 toks/s | 42.68 toks/s |
 
+
+#### TO-DO
+
+1. switch to a larger model to try speculative decoding
