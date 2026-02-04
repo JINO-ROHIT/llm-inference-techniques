@@ -43,7 +43,10 @@ memory improvements = 260.7 / 32.59 ~= 8x reduction
 
 | Format | Total Bits | Sign Bit (S) | Exponent (E) | Mantissa / Fraction (M) | Numerical Range (Approx.) | Memory Usage (Relative to FP32) | Primary Uses and Characteristics |
 |-------|------------|--------------|--------------|--------------------------|----------------------------|----------------------------------|---------------------------------|
-| FP32  | 32 bits    | 1 bit        | 8 bits       | 23 bits                  | ±3.4 × 10³⁸               | 1x (Baseline)                   | high precision and baseline for training and inference |
-| BF16  | 16 bits    | 1 bit        | 8 bits       | 7 bits                   | ±3.4 × 10³⁸               | 50%                             | used in BF16/FP32 mixed training |
-| INT8  | 8 bits     | 1 bit        | None         | 7 bits (Effective)       | -128 to 127               | 25%                             | fnference acceleration with a good balance of speed/precision |
-| INT4  | 4 bits     | 1 bit        | None         | 3 bits (Effective)       | -8 to 7                   | 12.5%                           | extreme compression, need a lot of complex algorithms to make this work well |
+| FP32  | 32 bits    | 1 bit        | 8 bits       | 23 bits                  | ±3.4 × 10³⁸               | 1x (baseline)                   | high precision, baseline for training and inference |
+| FP16  | 16 bits    | 1 bit        | 5 bits       | 10 bits                  | ±6.5 × 10⁴                | 50%                             | faster training and inference, limited dynamic range, usually needs loss scaling |
+| BF16  | 16 bits    | 1 bit        | 8 bits       | 7 bits                   | ±3.4 × 10³⁸               | 50%                             | used in bf16/fp32 mixed training, wide dynamic range |
+| FP8   | 8 bits     | 1 bit        | 4–5 bits*   | 2–3 bits*                | ~10²–10³*                 | 25%                             | aggressive low-precision training and inference, hardware dependent, needs careful scaling |
+| INT8  | 8 bits     | 1 bit        | none         | 7 bits       | -128 to 127               | 25%                             | inference acceleration with a good balance of speed and precision |
+| INT4  | 4 bits     | 1 bit        | none         | 3 bits      | -8 to 7                   | 12.5%                           | extreme compression, requires complex algorithms to work well |
+
