@@ -12,7 +12,6 @@
 
 Caveat: PD disaggreation should have way more gains when used the correct hardware, my implementation is a simulation
 
-#### TO-DO
 
-1. switch to a larger model to try speculative decoding
-2. decouple kv outside the model
+1. [paged attention](./nano-paged-attention/) - my implementation for a minimal paged attention.
+2. [ORCA](./ORCA/) - my implementation for ORCA serving engine.

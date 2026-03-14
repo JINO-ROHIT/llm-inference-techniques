@@ -1,3 +1,6 @@
 [submodule "nano-paged-attention"]
 	path = nano-paged-attention
 	url = https://github.com/JINO-ROHIT/nano-paged-attention
+[submodule "ORCA"]
+	path = ORCA
+	url = https://github.com/JINO-ROHIT/ORCA

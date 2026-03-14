@@ -50,3 +50,7 @@ memory improvements = 260.7 / 32.59 ~= 8x reduction
 | INT8  | 8 bits     | 1 bit        | none         | 7 bits       | -128 to 127               | 25%                             | inference acceleration with a good balance of speed and precision |
 | INT4  | 4 bits     | 1 bit        | none         | 3 bits      | -8 to 7                   | 12.5%                           | extreme compression, requires complex algorithms to work well |
 
+good paper list to catchup on quantization - https://github.com/Zhen-Dong/Awesome-Quantization-Papers?tab=readme-ov-file#transformer-based-models
+
+
+#to-do add technique wise notes
