@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "torch>=2.9.1",
     "xxhash>=3.6.0",
+    "zmq>=0.0.0",
 ]
 
 [dependency-groups]
