@@ -17,3 +17,4 @@ Caveat: PD disaggreation should have way more gains when used the correct hardwa
 2. [ORCA](./ORCA/) - my implementation for ORCA serving engine.
 3. [zmq](./zmq/) - vllm uses zmq to communicate and stream requests.
 4. [torch compile](./torch_compile_notes/) - notes on how to use torch compile
+5. [distributed techniques](./distributed_techniques) - a collection of notes and example for distributed techniques and algorithms
