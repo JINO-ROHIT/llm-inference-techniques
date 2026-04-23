@@ -79,4 +79,24 @@ if N is the number of parameters and in fp32( 4 bytes) -
 for the activation memory read here - https://huggingface.co/spaces/nanotron/ultrascale-playbook?section=memory_for_activations
 but the general idea is that it grows out of control as you increase batch size and the sequence length.
 
-and since the activations depend on the input, it hards to shard them using the data parallelism techniques we saw above.
+and since the activations depend on the input, its hard to shard them using the data parallelism techniques we saw above.
+
+
+## tensor parallelism
+
+ref: https://huggingface.co/spaces/nanotron/ultrascale-playbook?section=tensor_parallelism_in_a_transformer_block
+
+this technique shards weights, gradients, and optimizer states as well as activations.
+the reason why this works is because of the math property of how you can use both row wise and column wise in matrix mul.
+
+this way you can shard both the linear and attention head either column or row wise.
+
+the problem is you still need the entire activations for dropout, layernorm etc because you need the whole hidden dimension.
+
+the standard way to do this is megatron-lm style where you alternate column and row parallel linear layers back to back so the all-gather from the column parallel output feeds directly into the row parallel input. this way you only need 2 communication ops per transformer block - one all-reduce after the row parallel linear and one after the mlp.
+
+for attention specifically, each gpu gets a subset of heads. so if you have 32 heads across 4 gpus, each gpu handles 8 heads. this works cleanly because attention heads are independent of each other. for mlp blocks, column parallel splits the weight matrix vertically so each gpu computes a slice of the intermediate hidden dim. then row parallel splits horizontally and each gpu holds a slice of the input and does a partial matmul, then you all-reduce to sum the partial results.
+
+the communication cost is the main tradeoff. every forward and backward pass requires all-reduce calls within the tensor parallel group. this means tensor parallelism is very sensitive to interconnect bandwidth. it basically only makes sense within a single node where you have nvlink, not across nodes over infiniband because the latency is too much. the other tradeoff is that increasing tensor parallel degree shrinks the per gpu compute chunk, so at some point the matmuls become too small to efficiently utilize the gpu and you lose more from underutilization than you gain from the memory savings.
+
+## sequence parallelism ( too complicated, come back to this later)
