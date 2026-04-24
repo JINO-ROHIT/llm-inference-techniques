@@ -99,4 +99,5 @@ for attention specifically, each gpu gets a subset of heads. so if you have 32 h
 
 the communication cost is the main tradeoff. every forward and backward pass requires all-reduce calls within the tensor parallel group. this means tensor parallelism is very sensitive to interconnect bandwidth. it basically only makes sense within a single node where you have nvlink, not across nodes over infiniband because the latency is too much. the other tradeoff is that increasing tensor parallel degree shrinks the per gpu compute chunk, so at some point the matmuls become too small to efficiently utilize the gpu and you lose more from underutilization than you gain from the memory savings.
 
-## sequence parallelism ( too complicated, come back to this later)
+## sequence parallelism TO-DO
+## context parallelism TO-DO
