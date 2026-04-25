@@ -89,7 +89,7 @@ ref: https://huggingface.co/spaces/nanotron/ultrascale-playbook?section=tensor_p
 this technique shards weights, gradients, and optimizer states as well as activations.
 the reason why this works is because of the math property of how you can use both row wise and column wise in matrix mul.
 
-this way you can shard both the linear and attention head either column or row wise.
+specifically, for a matrix multiply Y = XA, you can split A column-wise across gpus so each gpu computes a partial output slice, or split X row-wise and A row-wise so each gpu does a partial dot product and you sum at the end. this way you can shard both the linear and attention head either column or row wise.
 
 the problem is you still need the entire activations for dropout, layernorm etc because you need the whole hidden dimension.
 
@@ -101,3 +101,30 @@ the communication cost is the main tradeoff. every forward and backward pass req
 
 ## sequence parallelism TO-DO
 ## context parallelism TO-DO
+
+
+## pipeline parallelism
+
+pipeline parallelism is a more simpler technique, where you split the model layer's across multiple gpus. for example layer 1-5 in gpu1, layer 6-10 in another gpu etc. this saves a tons of memory since only a portion of the model is present on each gpu.
+
+technique 1 - all forward all backward
+
+there is a problem with naively spreading the layers across the gpu, the thing is when gpu 1 is computing layer 1-5, the gpus are waiting because they have the later layer which needs the activations of the prior layers. this seems sequential and too slow.
+
+the fix for this is micro-batching. instead of sending one big batch through, you split it into smaller chunks. so while gpu 2 is processing micro-batch 1, gpu 1 can already start on micro-batch 2. this way gpus stay busier.
+
+but now you have a different problem. you have to keep all the activations from every micro-batch in memory until the backward pass gets to them. with lots of micro-batches this causes a memory explosion because you're holding all those intermediate activations across all stages at once.
+
+technique 2 - one forward, one backward
+
+the core idea is simple, instead of doing all forwards then all backwards, you start the backward pass as soon as possible. here you alternate: one forward, one backward, one forward, one backward.
+
+in the previous technique, you had to store activations for all m micro-batches at once. here you only need to store activations for pp micro-batches (the pipeline degree) because you're freeing them as soon as the backward pass catches up. this is a huge difference if you have 32 micro-batches but only 4 pipeline stages, and because memory is now cheaper, you can afford to use more micro-batches.
+
+technique 3 - interleaving stages
+
+the problem with the previous technique is that you cant keep stacking micro batches, because there is a limit to the global batch size.
+
+the idea here is to stop slicing the model in big contiguous chunks and instead interleave which layers each gpu owns. instead of gpu 1 getting layers 1-4 and gpu 2 getting layers 5-8, you give gpu 1 layers 1,3,5,7 and gpu 2 layers 2,4,6,8. each gpu now owns multiple non-contiguous chunks of the model instead of one big block. this creates a looping pipeline where a micro-batch has to travel through all gpus multiple times to complete its forward pass, once per chunk. it's more round trips but each individual pass is shorter and you can interleave them much more tightly.
+
+the cost is communication scales up by the number of chunks you split the model into. every extra chunk means another boundary crossing, so the micro-batch hits the network N times as much as before.
