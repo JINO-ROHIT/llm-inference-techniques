@@ -2,6 +2,62 @@
 
 read the primer on my blogs/ section - https://jino-rohit.github.io/blogs/blog.html
 
+
+a nice mental model for quantization
+
+quantization solves essentially a data movement problem. the problem is doing arithmetic is insanely quicker compared to moving data from one place to another.
+
+why do we have to move things then?
+
+its because the SRAM/registers are quite small compared to the HBM, where we hold all the weights of the llm. during each token generation, we carry a pice of data from HBM to SRAM, compute and then move back again. this movement is actually what makes the overall system slower not the computation itself.
+
+
+when you quantize from a larger fp16 to say fp8, this doesnt mean computation is faster, it means we have lesser data to transfer and hence the overall system is way faster now.
+
+
+let me illustrate with an example. 
+
+say you have a A100 with -
+- memory bandwith of 2000 GB/s
+- computing power of 312 TFLOPS
+
+you want to generate from a model with 100 B parameters.
+
+data transfer
+
+for fp16, we need 16 bits or 2 bytes for each param. so total data volume = 100 x 10^9 x 2 = 200 GB
+for fp8, we need 1 byte, so total data volume = 100 GB
+
+
+actual computation( im going to simplify this to just be matrix multiplication that does multiplications and additions)
+
+total computation load = 100 x 10^9 x 2 = 200 GFLOPS
+
+
+now, how long does it take to generate one token in an A100?
+
+the fp16 case
+
+load data = 200 GB / 2000 GB/s = 0.1 s
+to compute = 200 GLOPS / 312 TFLOPS = 0.0006 s
+
+look at that, data transfer is over 100x slower than the actual computation itself.
+
+
+
+now the fp8 case
+
+load data = 100 GB / 2000 GB/s = 0.05 s
+computations ~= 0.0006 s ( maybe a bit faster than fp16)
+
+but look at this now, yes computation might be a bit faster but indeed loading data has now become signicantly faster!
+
+this is in principle what all quantization algorithms try to do.
+
+
+
+
+
 1. `bitsandbytes` or the `int8` paper 
 
 - https://arxiv.org/pdf/2208.07339
@@ -19,3 +75,10 @@ how is this technique applied? not across the whole tensor. we do something call
 if we used a single scale for the whole tensor, the performance would be quite poor since one large value is enough to distort the whole representation.
 
 so instead we have a scale per row/per column.
+
+2. `fp8` quantization
+
+1. we use a RTN or round to nearest quantization scheme
+2. targetting all the linear layers
+3. for the weights, instead of a single scaling factor, we use a scale per channel
+4. now for the activations, we scale independently for each tokens, ie dynamic quantization.
