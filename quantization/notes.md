@@ -56,6 +56,62 @@ this is in principle what all quantization algorithms try to do.
 
 
 
+1. symmetric quantization (ref: https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-quantization)
+
+in symmetric quantization, the range of the original floating-point values is mapped to a symmetric range around zero in the quantized space. this means zero will
+always be zero. its also called absmax quantization.
+
+
+lets say we want to convert fp16 to int8 for the numbers
+
+```
+5.47 8.21 3.145 10.94
+```
+
+the max value in this range is 10.94
+the max value of the int8 range is 127
+
+scale factor = 10.94/127 = 0.086
+
+now we quant the first value 5.47 to become = round(value / scale)
+                                            = round(5.47 / 0.086)
+                                            = round(63.60)
+                                            = 64
+
+to perform dequant, it becomes = scale * value
+                               = 0.086 * 64
+                               = 5.50
+
+the error factor here is (5.50 - 5.47) = 0.03
+
+
+2. Asymmetric quantization
+
+In asymmetric quantization, the minimum and maximum values from the floating-point range map directly to the minimum and maximum values of the quantized range (not centered at zero).
+
+**Floating-point range:** [r_min, r_max]  
+**Integer range:** [q_min, q_max]
+
+For INT8: [−128, 127]
+
+**Scale factor:**
+
+$$S = \frac{q_{max} - q_{min}}{r_{max} - r_{min}}$$
+
+**Zero point:**
+
+$$Z = q_{min} - r_{min} \times S$$
+
+**Quantization formula:**
+
+q = round(r/S)
+
+**Dequantization formula:**
+
+r = S * (q)
+	​
+
+	​
 
 
 1. `bitsandbytes` or the `int8` paper 
