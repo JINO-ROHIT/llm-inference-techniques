@@ -114,29 +114,18 @@ dequantization formula = r = S * (q)
 - https://arxiv.org/pdf/2208.07339
 - https://huggingface.co/blog/hf-bitsandbytes-integration
 
-a technique in which we do matrix mul in int8 and get almost no performance degradation.
 
-1. from the hidden states(inputs), get the outliers(meaning something above a threshold) by column
-2. these outliers, matmul them in fp16 and the others in int8. we can afford to do this since the outliers are usually ~1%.
-3. dequant the non outliers(others) and add them to the outliers to get the result in fp16.
+in this technique, we do matrix multiplication in int8 wotj almost no performance degradation.
 
+the main algorithm -
+1. from the hidden states(inputs), get the outliers(meaning something above a threshold) by column.
+2. matmul the outliers in fp16 and the others in int8. we can afford to do this since the outliers are usually ~1%.
+3. dequantize the non-outlier results and add them with the fp16 outlier results to produce the final fp16 output.
 
-how is this technique applied? not across the whole tensor. we do something called a vector wise quantization.
-
-if we used a single scale for the whole tensor, the performance would be quite poor since one large value is enough to distort the whole representation.
-
-so instead we have a scale per row/per column.
-
-2. `fp8` quantization
-
-1. we use a RTN or round to nearest quantization scheme
-2. targetting all the linear layers
-3. for the weights, instead of a single scaling factor, we use a scale per channel
-4. now for the activations, we scale independently for each tokens, ie dynamic quantization.
+instead of using a single scale for the entire tensor (which performs badly because one large value can distort the whole representation), bnb uses vector-wise quantization. that means each row / column gets its own scale, allowing much better preservation of information while still getting the efficiency benefits of int8.
 
 
-
-3. `awq` quantization
+2. `awq` quantization
 
 paper - https://arxiv.org/pdf/2306.00978
 
