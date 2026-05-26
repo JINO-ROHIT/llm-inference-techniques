@@ -244,7 +244,75 @@ quoting from this - https://github.com/vllm-project/llm-compressor/issues/1522
 we found that using randomly generated tokens is good enough for smaller models (e.g. 8B scale), whereas for larger ones (e.g. 70B and 405B), we need to use a proper dataset to get an accurate quantized model. This aligns well with the intuition from above: during quantization, we want to trigger outliers/activations to properly capture their behavior.
 
 
-3. `gptq` quantization
+4. `smoothquant` quantization
+
+the general formula for quantization is - 
+
+![alt text](image-1.png)
+
+the problem w this formula is that unlike CNNs, LLMs have too many outliers in activations and hence if you use this, most of the outliers end up turned off to zero.
+
+usually the model weights are more evenly distributed and hence quantization is easier. but only quantizing the weights only should give almost no perf
+improvements. as a matter of fact, it might be even worse since during the calculation, you have to dequant the weight back to fp16 and then multiple with activations.
+
+on the other hand, the outliers in activations are very difficult to handle.
+
+authors found out outliers typically appear in a few specific channels of the activation values.
+also if for a token, one of the specifc channel have a large activation value, the other channels also have large activations.
+
+they thought maybe we should quantize outlier tokens differently.
+
+1. detect outlier tokens at runtime,
+2. use larger quantization scales for special channels,
+3. use normal scales elsewhere.
+
+but this indeed is hardware-unfriendly.
+
+
+but if every token -
+
+has different scales,
+different quantization rules,
+different channel handling,
+
+then the GPU ends up branching, lots of memory accesses and slow down
+
+
+what if we transfer the outlier from the activations to the weights?
+
+they scale up the model weights and scale down the activations but mathematically the scale factor cancels each other out and remains unchanged.
+
+![alt text](image-2.png)
+
+this way, the "outlier" channels of the activation values ​​are smoothed, and this outlier portion is "transferred" to the weights. after this operation:
+1. the overall variance of the activation values ​​decreased, reducing the difficulty of quantization.
+2. the overall variance of the weights has increased, but their original variance was very small. even with the increase, the difficulty of quantification remains within an acceptable range.
+
+cool, now the hyperparam to find is the `scale` factor.
+
+1. scenario 1 is s = max(X)
+
+this will cause all outliers of the activation values ​​to be transferred to the weights, making the activation values ​​easy to quantify, while the weights are difficult to quantify.
+
+2. scenario 2 is s = 1 / max(X) 
+
+which will make the variance of the weights, which originally had a smaller variance, even smaller, and the variance of the activation values ​​even larger.
+
+![alt text](image-3.png)
+
+by introducing a hyperparameter α, these two extreme cases can be balanced, they found α = 0.5 is the best case.
+
+
+smoothing_factor - the degree to which outliers are balanced and shifted from activation values ​​to weights, or the degree of smoothing of the distribution of activation values.
+
+1. using a larger factor can greatly smooth out outliers in activation values, reduce the overall variance of activation values, and make activation values ​​easier to quantify; the side effect is that the variance of the weights increases, making weight quantification more difficult.
+2. using a smaller factor has little effect on smoothing outliers, and activation values ​​are difficult to quantify.
+3. 0.5 is generally recommended.
+
+smoothquant is usually W8A8.
+
+
+5. `gptq` quantization
 
 lots of primer needed to understand this (mostly calculus but on an application level not just theory understanding)
 
