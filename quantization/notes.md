@@ -242,3 +242,162 @@ now we only need to search for alpha. this is done by taking 20 numbers on avera
 quoting from this - https://github.com/vllm-project/llm-compressor/issues/1522
 
 we found that using randomly generated tokens is good enough for smaller models (e.g. 8B scale), whereas for larger ones (e.g. 70B and 405B), we need to use a proper dataset to get an accurate quantized model. This aligns well with the intuition from above: during quantization, we want to trigger outliers/activations to properly capture their behavior.
+
+
+3. `gptq` quantization
+
+lots of primer needed to understand this (mostly calculus but on an application level not just theory understanding)
+
+1. higher order derivatives
+2. this is directly connected to using hessian matrix(then question why hessian matrix is going to be slow)
+3. start understanding how taylor series can approximate the functions
+4. read on lagrange multiplier   
+4. read obs which is a network pruning method.
+5. read obq which is a quantization that builds on top of this.(easy if you understand obs)
+
+after this, reading the gptq paper should start making sense since gptq strips into obq and aims to make it faster.
+
+
+a rough intuition for the `obs` algorithm
+
+say you have a NN trained, you want to delete one weight(set it to zero), but dont want the models accuracy to drop.
+how do we do this?
+
+w = [w1, w2, w3] = [0.8, 0.05, 0.6]
+
+step 1 - use taylor expansion to approximate the change in loss function
+
+lets say we perturb the weights by a vector ΔW , change in loss is -
+
+```
+δL = (∂L/∂w)ᵀ Δw + ½ ΔwᵀH Δw + O(||Δw||³)
+```
+
+```
+(remember taylor expansion is f(x) + f'(x)δ + ½f''(x)δ² + ...)
+apply this to L(w + Δw)
+```
+
+first order derivative - (∂L/∂w)ᵀ Δw
+this is the slope that tells how loss varies with a nudge in the weight
+
+second order derivative - ½ ΔwᵀH Δw
+this tells how the slope itself changes
+
+cubic derivative - O(||Δw||³)
+
+
+now drop the first term, why? if the model is trained, and the loss has converged, then there isnt any gradient.
+drop the cubic term as well since the delta change is quite low, and the overall change is negligible.
+
+
+so we are left with just -
+
+```
+δL ≈ ½ ΔwᵀH Δw
+```
+
+step 2 - understand the hessian H
+
+H is a matrix of second derivatives, for our 3 weight example its 3x3
+H[i,j] = ∂²L / (∂wi ∂wj)
+
+the diagonal H[i,i] tells us - how sharply curved is the loss if we change weight i?
+the off-diagonal H[i,j] tells us - if we change both wi and wj, how do they interact?
+
+say our hessian looks like -
+H = [ 4.0   0.5   0.2 ]
+    [ 0.5   0.1   0.1 ]
+    [ 0.2   0.1   3.0 ]
+
+diagonal says - w1 has curvature 4.0 (steep), w2 has curvature 0.1 (flat), w3 has curvature 3.0 (steep)
+
+
+step 3 - express "deleting weight q" as a constraint
+
+wq is the weight need to modify
+
+say we want to delete w2 (q=2). we need wq to become 0, so the change at position q is Δwq = -wq.
+
+we use a one-hot vector eq to express this cleanly -
+
+for q = 2: e2 = [0, 1, 0]
+
+the constraint becomes -
+Δw + w2 = 0
+
+expanding: [0,1,0] [Δw1, Δw2, Δw3] + 0.05 = 0
+
+so: Δw2 = -0.05 (the change at position 2 cancels out w2)
+
+w1 and w3 are free, they'll be adjusted to compensate.
+
+
+step 4 - solve the constrained optimization with lagrange multipliers
+
+we want to -
+- minimize: δL = ½ ΔwᵀH Δw (keep loss increase small)
+- subject to: Δw + wq = 0 (weight q goes to zero)
+
+lagrange multipliers let us combine these into one problem -
+minimize: F(Δw, λ) = ½ ΔwᵀH Δw + λ(eqᵀ Δw + wq)
+
+differentiate w.r.t Δw and set to zero -
+H Δw + λeq = 0
+Δw = -λ H⁻¹ eq
+
+substitute back into the constraint to solve for λ -
+eqᵀ(-λ H⁻¹ eq) + wq = 0
+λ = wq / [H⁻¹]qq
+
+[H⁻¹]qq is just the (q,q) entry of the inverse hessian, a single number.
+
+plugging λ back in -
+Δw = -(wq / [H⁻¹]qq) · H⁻¹ eq    weight update formula
+
+this tells us exactly how to nudge every remaining weight to compensate for removing wq.
+
+
+step 5 - the saliency score (which weight do we actually prune?)
+
+substitute Δw back into δL = ½ ΔwᵀH Δw -
+δL = ½ · wq² / [H⁻¹]qq    ---> saliency score
+
+compute this for every weight, prune the one with the lowest score (least damage).
+
+for our example, assume H⁻¹ diagonal ≈ [0.27, 11.1, 0.34] -
+w1: ½ · 0.64 / 0.27  = 1.19
+w2: ½ · 0.0025 / 11.1 = 0.00011  ---> smallest, prune this
+w3: ½ · 0.36 / 0.34  = 0.53
+
+w2 wins because it has a tiny value AND sits in a flat region (large [H⁻¹]qq).
+
+
+note on [H⁻¹]qq vs H[q,q] -
+
+large H[q,q] = steep curvature that means small [H⁻¹]qq so large saliency score and dangerous to prune
+small H[q,q] = flat curvature means large [H⁻¹]qq so small saliency score and safe to prune
+
+so [H⁻¹]qq acts as a flatness measure. the saliency formula balances two things -
+- is the weight small? (wq²)
+- is the region flat? ([H⁻¹]qq)
+
+both need to be true for a weight to be a good pruning candidate.
+
+
+`obq` algorithm
+
+obq quickly extended this approach to quantization. 
+pruning can be seen as a special type of quantization where we apprioximnate a value to 0, can be called 0 bit quantization.
+
+so you extend this equation.
+
+```
+δL = ½ · wq² / [H⁻¹]qq
+```
+
+to 
+
+```
+δL = ½ · (wq - quant(wq))² / [H⁻¹]qq
+```
