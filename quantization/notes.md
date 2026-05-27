@@ -96,11 +96,14 @@ for INT8: [−128, 127]
 
 scale factor
 
-$$S = \frac{q_{max} - q_{min}}{r_{max} - r_{min}}$$
+```
+S = q_{max} - q_{min} / {r_{max} - r_{min}}
+```
 
 zero point
-
-$$Z = q_{min} - r_{min} \times S$$
+```
+Z = q_min - r_min x S
+```
 
 quantization formula = q = round(r/S)
 
@@ -244,7 +247,7 @@ quoting from this - https://github.com/vllm-project/llm-compressor/issues/1522
 we found that using randomly generated tokens is good enough for smaller models (e.g. 8B scale), whereas for larger ones (e.g. 70B and 405B), we need to use a proper dataset to get an accurate quantized model. This aligns well with the intuition from above: during quantization, we want to trigger outliers/activations to properly capture their behavior.
 
 
-4. `smoothquant` quantization
+3. `smoothquant` quantization
 
 the general formula for quantization is - 
 
@@ -312,7 +315,7 @@ smoothing_factor - the degree to which outliers are balanced and shifted from ac
 smoothquant is usually W8A8.
 
 
-5. `gptq` quantization
+4. `gptq` quantization
 
 lots of primer needed to understand this (mostly calculus but on an application level not just theory understanding)
 
@@ -469,3 +472,10 @@ to
 ```
 δL = ½ · (wq - quant(wq))² / [H⁻¹]qq
 ```
+
+
+
+5. `QuIP: 2-Bit Quantization for LLMs`
+
+good lecture -https://www.youtube.com/watch?v=6wEVz0wkhCM
+
