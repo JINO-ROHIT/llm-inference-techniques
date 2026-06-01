@@ -128,3 +128,7 @@ the problem with the previous technique is that you cant keep stacking micro bat
 the idea here is to stop slicing the model in big contiguous chunks and instead interleave which layers each gpu owns. instead of gpu 1 getting layers 1-4 and gpu 2 getting layers 5-8, you give gpu 1 layers 1,3,5,7 and gpu 2 layers 2,4,6,8. each gpu now owns multiple non-contiguous chunks of the model instead of one big block. this creates a looping pipeline where a micro-batch has to travel through all gpus multiple times to complete its forward pass, once per chunk. it's more round trips but each individual pass is shorter and you can interleave them much more tightly.
 
 the cost is communication scales up by the number of chunks you split the model into. every extra chunk means another boundary crossing, so the micro-batch hits the network N times as much as before.
+
+
+references -
+1. megatron v1 - https://www.youtube.com/watch?v=ImKyR1tsPPE
