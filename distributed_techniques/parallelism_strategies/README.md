@@ -130,5 +130,44 @@ the idea here is to stop slicing the model in big contiguous chunks and instead 
 the cost is communication scales up by the number of chunks you split the model into. every extra chunk means another boundary crossing, so the micro-batch hits the network N times as much as before.
 
 
-references -
-1. megatron v1 - https://www.youtube.com/watch?v=ImKyR1tsPPE
+1. megatron v1(distributed training)
+(references - https://www.youtube.com/watch?v=ImKyR1tsPPE)
+
+the main crux of the paper is to use model parallelism with a few synchronize primitives.
+
+- mlp block
+ this consists of a GEMM + GELu(some activation)
+
+one option to parallelize the GEMM is to split the weight matrix A along its rows and input X along its columns(bad option)
+
+![alt text](artifacts/image.png)
+
+
+better to split along the columns, so gelu can be applied independently
+
+![alt text](artifacts/image-1.png)
+
+by doing this split, we dont have to apply , the all-reduce immediately.
+
+
+now for the second GEMM, we split along rows, do an all-reduce and then do dropout.
+![alt text](artifacts/image-2.png)
+
+- attention block
+the idea is each of the self attention head doesnot depend on each each, so we split then across GPUs
+
+![alt text](artifacts/image-3.png)
+
+![alt text](artifacts/image-4.png)
+
+- embedding layer
+
+imagine we have vocab size 50k, parallelizing them across gpus is more beneficial. but this is a bit more trickier since if we break the embedding layer, we wont have all the indexes in one gpus, how do we handle this?
+
+![alt text](artifacts/image-5.png)
+
+if the index is present, then retrieve it, else zero. finally in all reduce we get all the values. although we use a all-reduce primitive.
+
+- final output layer
+
+![alt text](artifacts/image-6.png)
