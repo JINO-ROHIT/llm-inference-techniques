@@ -2,6 +2,11 @@
 
 there are times where the llm doesnt fit in the gpu, or maybe you have multiple gpus that you want to make use of for fatser training etc. to scale the llm across multiple gpus, we use parallelism techniques.
 
+
+## dp vs ddp (write notes for this)
+
+## ddp vs fsdp (write notes for this)
+
 ## data parallelism
 
 the idea is if you have 5 gpus -
