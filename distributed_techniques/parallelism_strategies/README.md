@@ -15,7 +15,6 @@ torch.nn.DataParallel is the earliest data parallelism method provided by PyTorc
 5. the new weights are now copied from the main GPU to all GPUs
 6. continue
 
-the problem here is yes its single process, besides that theres also the overhead on the master GPU with the added communication cost for each iteretion.
 yes, the single process design suffers from python GIL overhead, but the main issue is the master GPU becoming a bottleneck. all gradients need to be sent to the main GPU and aggregation happens only on this GPU, meanwhile the other GPUs are idle. this would result in really poort scaling as GPU count increases.
 
 
