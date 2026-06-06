@@ -3,7 +3,36 @@
 there are times where the llm doesnt fit in the gpu, or maybe you have multiple gpus that you want to make use of for fatser training etc. to scale the llm across multiple gpus, we use parallelism techniques.
 
 
-## dp vs ddp (write notes for this)
+## dp vs ddp
+
+pytorch data parallelism (dp)
+
+torch.nn.DataParallel is the earliest data parallelism method provided by PyTorch. it is implemented based on single process. it uses a single process to calculate model weights and distributes data to each GPU during each batch. the flow looks like this -
+1. input are split from the main GPU to all GPUs.
+2. the model is copied from the main GPU to all GPUs.
+3. each GPU performs forward + backward pass, and compute gradients.
+4. these gradients are sent to the main GPU, and the model weights are updated using the gradients.
+5. the new weights are now copied from the main GPU to all GPUs
+6. continue
+
+the problem here is yes its single process, besides that theres also the overhead on the master GPU with the added communication cost for each iteretion.
+yes, the single process design suffers from python GIL overhead, but the main issue is the master GPU becoming a bottleneck. all gradients need to be sent to the main GPU and aggregation happens only on this GPU, meanwhile the other GPUs are idle. this would result in really poort scaling as GPU count increases.
+
+
+pytorch distributed data parallelism (ddp)
+
+torch.nn.DistributedDataParallel is based on multiple processes and works more efficiently compared to the previous technique.
+1. one process is launched per GPU.
+2. during initialization, model parameters are synchronized so all replicas start identically.
+3. each process receives a different shard of the dataset
+4. each GPU performs forward + backward pass, and compute gradients.
+5. instead of sending gradients to the main GPU alone, it does an all-reduce will all the other GPUs so now every GPU has the true reduced gradient.
+6. each GPU now updates the weights using the same gradients, so the new model weights across all the processes are identical.
+7. continue
+
+this has no more bottleck of the master GPU and scales extremely well compared to dp.
+
+![alt text](artifacts/dp-ddp.png)
 
 ## ddp vs fsdp (write notes for this)
 
