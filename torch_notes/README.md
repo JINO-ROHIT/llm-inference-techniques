@@ -68,6 +68,21 @@ more resorces
 - pytorch developer podcast hosted by edward yang. i wished they continued this but i think its stopped now
 - ezyang's blog on pytorch internals
 
+you will also need to build a debug version of torch and keep the source code generated during the compilation process otherwise, it will be difficult to find the source of some functions in the function call stack.
+
+you can try this -
+
+1. pick the main branch for instance and then -
+
+```
+export DEBUG=1
+python setup.py bdist_wheel
+uv pip install dist/torch*.whl
+```
+
+2. you can launch a torch script you want to debug and launch using gdb, start adding breakpoints and watch the whole function stack.
+
+
 
 the best thing to do would be to trace just a single sufficiently complex operation end to end and not try to read the entire codebase and self destruct. ill try to add more details to this as i discover more.
 
